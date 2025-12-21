@@ -831,6 +831,8 @@ HEADING is a (position level text) tuple."
   (interactive)
   (unless porg-mode
     (user-error "Porg-mode is not enabled"))
+  (unless (require 'consult nil t)
+    (user-error "This feature requires the 'consult' package. Install it to use porg-consult"))
   (let* ((headings (porg--get-headings))
          (candidates (mapcar #'porg--format-heading headings)))
     (if candidates
