@@ -1,7 +1,7 @@
 ;;; porg.el --- Org-like features for any programming language  -*- lexical-binding: t; -*-
 
 ;; Author: Laluxx
-;; Version: 0.0.4
+;; Version: 0.0.5
 ;; Package-Requires: ((emacs "24.3"))
 ;; Keywords: convenience, faces
 ;; Homepage: https://github.com/laluxx/porg
@@ -40,6 +40,7 @@
   "Org-like features for programming modes."
   :group 'faces
   :group 'convenience)
+
 
 ;;;; Bullets Configuration
 
@@ -117,7 +118,7 @@ Inherits from org-block to match your theme's block styling."
 (defcustom porg-blocks-files nil
   "List of file names where block backgrounds should be shown.
 If nil, blocks are shown in all buffers.
-If set to a list of file names (e.g., '(\"init.el\" \"config.el\")),
+If set to a list of file names (e.g., \\='(\"init.el\" \"config.el\")),
 blocks will only be shown in buffers visiting files with those names.
 File name matching is case-sensitive and matches the base name only."
   :type '(choice (const :tag "All files" nil)
@@ -133,6 +134,7 @@ File name matching is case-sensitive and matches the base name only."
 ;;;; Internal Variables
 
 (defvar porg-bullet-map (make-sparse-keymap))
+
 (defvar-local porg--overlays nil
   "List of overlays used for block backgrounds.")
 (defvar-local porg--comment-start nil
@@ -205,7 +207,8 @@ Returns nil if the comment count is less than base level."
     (1+ (- comment-count porg-base-level))))
 
 (defun porg-current-level ()
-  "Return the logical level of the current comment line, or nil if not on a heading."
+  "Return the logical level of the current comment line.
+Returns nil if not on a heading."
   (save-excursion
     (beginning-of-line)
     (let ((comment-count (porg--comment-count)))
@@ -256,9 +259,6 @@ Returns nil if the comment count is less than base level."
 
 (defvar-local porg--keywords nil
   "Font-lock keywords for the current buffer.")
-
-
-;; Replace the porg--setup-keywords function with this updated version:
 
 (defun porg--setup-keywords ()
   "Setup font-lock keywords based on current buffer's comment syntax."
@@ -332,9 +332,9 @@ Returns nil if the comment count is less than base level."
                                            porg-bullet-map)))
                     nil))))))))
 
-(defun porg--after-change (beg end _len)
+(defun porg--after-change (beg _end _len)
   "Refontify the line when changes occur in the bullet area.
-BEG and END are the changed region boundaries."
+BEG is the start of the changed region."
   (when porg-mode
     (save-excursion
       (goto-char beg)
@@ -449,7 +449,7 @@ Returns the position of the last non-empty line, leaving padding."
 
 ;;;; Heading Manipulation
 
-(defun porg--blank-before-heading-p (&optional parent)
+(defun porg--blank-before-heading-p (&optional _parent)
   "Non-nil when an empty line should precede a new comment heading here."
   (pcase (assq 'heading porg-blank-before-new-entry)
     (`(heading . auto)
@@ -468,7 +468,7 @@ Returns the position of the last non-empty line, leaving padding."
     (`(heading . ,value) value)
     (_ nil)))
 
-(defun porg-insert-heading (&optional arg invisible-ok level)
+(defun porg-insert-heading (&optional arg _invisible-ok level)
   "Insert a new comment heading with the same depth at point.
 With ARG, respect content structure by finding the end of the current
 section and inserting there."
@@ -587,7 +587,6 @@ This finds the end of the current section and inserts the new heading there."
             (porg--update-overlays))))
     (message "Not on a heading")))
 
-
 (defun porg-metaleft (&optional arg)
   "Promote heading or call `backward-word' if not on a heading.
 With shift held, select while moving backward."
@@ -605,7 +604,6 @@ With shift held, select while moving forward."
   (if (porg--on-heading-p)
       (porg-demote arg)
     (forward-word arg)))
-
 
 (defun porg--get-todo-keyword ()
   "Get the todo keyword at the current heading, if any.
@@ -687,10 +685,7 @@ With prefix ARG, cycle backwards."
       (porg-todo)
     (forward-word arg)))
 
-
-
 ;;; Headline
-
 ;;;; Navigation
 
 (defun porg-next-visible-heading (&optional arg)
@@ -716,28 +711,28 @@ the next level 1 heading is visible. If not, recenter."
       (beginning-of-line)
       (when (and (porg--on-heading-p)
                  (= (porg-current-level) 1))
-        (let ((comment-char (porg--get-comment-char))
-              (last-nonblank-pos
+        (let ((last-nonblank-pos
                (save-excursion
-                 (forward-line 1)
-                 (if (re-search-forward (format "^[ \t]*%s\\{%d\\}[^%c]"
-                                                (regexp-quote (char-to-string comment-char))
-                                                porg-base-level
-                                                comment-char)
-                                        nil t)
-                     (progn
-                       (forward-line -1)
-                       (while (and (not (bobp))
-                                   (looking-at "^[ \t]*$"))
-                         (forward-line -1))
-                       (end-of-line)
-                       (point))
-                   (goto-char (point-max))
-                   (while (and (not (bobp))
-                               (looking-at "^[ \t]*$"))
-                     (forward-line -1))
-                   (end-of-line)
-                   (point)))))
+                 (let ((comment-char (porg--get-comment-char)))
+                   (forward-line 1)
+                   (if (re-search-forward (format "^[ \t]*%s\\{%d\\}[^%c]"
+                                                  (regexp-quote (char-to-string comment-char))
+                                                  porg-base-level
+                                                  comment-char)
+                                          nil t)
+                       (progn
+                         (forward-line -1)
+                         (while (and (not (bobp))
+                                     (looking-at "^[ \t]*$"))
+                           (forward-line -1))
+                         (end-of-line)
+                         (point))
+                     (goto-char (point-max))
+                     (while (and (not (bobp))
+                                 (looking-at "^[ \t]*$"))
+                       (forward-line -1))
+                     (end-of-line)
+                     (point))))))
           (unless (pos-visible-in-window-p last-nonblank-pos)
             (recenter-top-bottom 0)))))))
 
@@ -764,31 +759,30 @@ the next level 1 heading is visible. If not, recenter."
       (beginning-of-line)
       (when (and (porg--on-heading-p)
                  (= (porg-current-level) 1))
-        (let ((comment-char (porg--get-comment-char))
-              (last-nonblank-pos
+        (let ((last-nonblank-pos
                (save-excursion
-                 (forward-line 1)
-                 (if (re-search-forward (format "^[ \t]*%s\\{%d\\}[^%c]"
-                                                (regexp-quote (char-to-string comment-char))
-                                                porg-base-level
-                                                comment-char)
-                                        nil t)
-                     (progn
-                       (forward-line -1)
-                       (while (and (not (bobp))
-                                   (looking-at "^[ \t]*$"))
-                         (forward-line -1))
-                       (end-of-line)
-                       (point))
-                   (goto-char (point-max))
-                   (while (and (not (bobp))
-                               (looking-at "^[ \t]*$"))
-                     (forward-line -1))
-                   (end-of-line)
-                   (point)))))
+                 (let ((comment-char (porg--get-comment-char)))
+                   (forward-line 1)
+                   (if (re-search-forward (format "^[ \t]*%s\\{%d\\}[^%c]"
+                                                  (regexp-quote (char-to-string comment-char))
+                                                  porg-base-level
+                                                  comment-char)
+                                          nil t)
+                       (progn
+                         (forward-line -1)
+                         (while (and (not (bobp))
+                                     (looking-at "^[ \t]*$"))
+                           (forward-line -1))
+                         (end-of-line)
+                         (point))
+                     (goto-char (point-max))
+                     (while (and (not (bobp))
+                                 (looking-at "^[ \t]*$"))
+                       (forward-line -1))
+                     (end-of-line)
+                     (point))))))
           (unless (pos-visible-in-window-p last-nonblank-pos)
             (recenter-top-bottom 0)))))))
-
 
 ;;;; Consult
 
@@ -852,7 +846,6 @@ HEADING is a (position level text) tuple."
             (recenter)))
       (message "No headings found"))))
 
-
 ;;;; Block Operations
 
 (defun porg-eval-block ()
@@ -879,13 +872,11 @@ HEADING is a (position level text) tuple."
         (progn
           (kill-region (car block) (cdr block))
           (open-line 2)
-          (next-line)
+          (forward-line 1)
           (open-line 1))
       (message "No block found at point"))))
 
-
 ;;;; Outline
-
 
 (defun porg--setup-outline ()
   "Configure outline-minor-mode for porg headings."
@@ -908,9 +899,6 @@ HEADING is a (position level text) tuple."
       ;; Enable outline-minor-mode
       (outline-minor-mode 1))))
 
-
-;; Add TAB cycling function (like org-mode):
-
 (defun porg-cycle (&optional arg)
   "Cycle visibility of current heading.
 With prefix ARG, cycle global visibility."
@@ -918,8 +906,6 @@ With prefix ARG, cycle global visibility."
   (if arg
       (porg-cycle-global)
     (porg-cycle-local)))
-
-;; Replace porg-cycle-local with this version:
 
 (defun porg-cycle-local ()
   "Cycle visibility of the current section.
@@ -1018,9 +1004,7 @@ If not on a heading, perform normal tab indentation."
       (message "OVERVIEW")
       (setq this-command 'porg-cycle-overview)))))
 
-
 ;;;; Mode Definition
-
 
 ;;;###autoload
 (define-minor-mode porg-mode
@@ -1072,7 +1056,6 @@ If not on a heading, perform normal tab indentation."
       (when (bound-and-true-p outline-minor-mode)
         (outline-minor-mode -1))
       (porg--fontify-buffer))))
-
 
 (provide 'porg)
 
