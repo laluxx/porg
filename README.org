@@ -1,0 +1,18 @@
+#+TITLE: Porg
+#+AUTHOR: Laluxx
+
+Brings org-mode to prog-mode(s)
+
+#+begin_src emacs-lisp
+
+(use-package porg
+  :ensure t
+  :config
+  (setq porg-blocks-files '("init.el")); File names where you want blocks
+  (setq porg-blocks-padding 2)
+  :hook (emacs-lisp-mode . porg-mode)
+        (clojure-mode . porg-mode)
+        (clojure-ts-mode . porg-mode)
+        (scheme-mode . porg-mode))
+  
+#+end_src>
