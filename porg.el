@@ -2,7 +2,7 @@
 
 ;; Author: Laluxx
 ;; Version: 0.0.5
-;; Package-Requires: ((emacs "24.3"))
+;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience, faces
 ;; Homepage: https://github.com/laluxx/porg
 
@@ -229,7 +229,7 @@ Returns nil if not on a heading."
            (member (file-name-nondirectory buffer-file-name)
                    porg-blocks-files))))
 
-(defun org-string-nw-p (s)
+(defun porg--org-string-nw-p (s)
   "Return S if S is a string containing a non-whitespace character."
   (and (stringp s)
        (string-match-p "[^ \r\t\n]" s)
@@ -313,13 +313,13 @@ Returns nil if not on a heading."
                                 ;; Apply level face to bullet area first
                                 (put-text-property bol text-start 'face level-face)
                                 ;; Apply done face with proper height to text
-                                (put-text-property text-start eol 'face 
-                                                   (list :inherit 'porg-done 
+                                (put-text-property text-start eol 'face
+                                                   (list :inherit 'porg-done
                                                          :height (face-attribute level-face :height))))
                                ;; If it's TODO, apply todo face only to the keyword
                                ((string= keyword "TODO")
                                 (put-text-property bol eol 'face level-face)
-                                (put-text-property keyword-start (point) 'face 
+                                (put-text-property keyword-start (point) 'face
                                                    (list :inherit 'porg-todo
                                                          :height (face-attribute level-face :height))))
                                ;; Otherwise just use the level face
@@ -469,7 +469,7 @@ Returns the position of the last non-empty line, leaving padding."
     (_ nil)))
 
 (defun porg-insert-heading (&optional arg _invisible-ok level)
-  "Insert a new comment heading with the same depth at point.
+  "Insert a new comment heading LEVEL with the same depth at point.
 With ARG, respect content structure by finding the end of the current
 section and inserting there."
   (interactive "P")
@@ -514,7 +514,7 @@ section and inserting there."
              (let ((split-text (delete-and-extract-region (point) (line-end-position))))
                (when blank? (insert "\n"))
                (insert "\n" comment-str " ")
-               (when (org-string-nw-p split-text) (insert split-text))))))
+               (when (porg--org-string-nw-p split-text) (insert split-text))))))
      ((bolp)
       (insert comment-str " ")
       (unless (and blank? (save-excursion (forward-line -1) (looking-at "^[ \t]*$")))
@@ -524,14 +524,15 @@ section and inserting there."
       (let ((split-text (delete-and-extract-region (point) (line-end-position))))
         (when blank? (insert "\n"))
         (insert "\n" comment-str " ")
-        (when (org-string-nw-p split-text) (insert split-text)))))
+        (when (porg--org-string-nw-p split-text) (insert split-text)))))
     (when porg-mode
       (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
       (porg--update-overlays))))
 
 (defun porg-insert-heading-respect-content (&optional invisible-ok)
   "Insert heading with respect for content structure.
-This finds the end of the current section and inserts the new heading there."
+This finds the end of the current section and inserts the new heading there.
+When INVISIBLE-OK is non-nil, don't error on invisible headlines."
   (interactive)
   (porg-insert-heading '(4) invisible-ok))
 
@@ -554,7 +555,7 @@ This finds the end of the current section and inserts the new heading there."
       (message "Not on a heading"))))
 
 (defun porg-promote (&optional arg)
-  "Promote the current heading by removing one comment character."
+  "Promote the current heading by removing one comment character ARG times."
   (interactive "p")
   (unless arg (setq arg 1))
   (if (porg--on-heading-p)
@@ -573,7 +574,7 @@ This finds the end of the current section and inserts the new heading there."
     (message "Not on a heading")))
 
 (defun porg-demote (&optional arg)
-  "Demote the current heading by adding one comment character."
+  "Demote the current heading by adding one comment character ARG times."
   (interactive "p")
   (unless arg (setq arg 1))
   (if (porg--on-heading-p)
@@ -588,7 +589,7 @@ This finds the end of the current section and inserts the new heading there."
     (message "Not on a heading")))
 
 (defun porg-metaleft (&optional arg)
-  "Promote heading or call `backward-word' if not on a heading.
+  "Promote heading ARG times or call `backward-word' if not on a heading.
 With shift held, select while moving backward."
   (interactive "^p")  ; ^ enables shift-selection
   (unless arg (setq arg 1))
@@ -597,7 +598,7 @@ With shift held, select while moving backward."
     (backward-word arg)))
 
 (defun porg-metaright (&optional arg)
-  "Demote heading or call `forward-word' if not on a heading.
+  "Demote heading ARG times or call `forward-word' if not on a heading.
 With shift held, select while moving forward."
   (interactive "^p")  ; ^ enables shift-selection
   (unless arg (setq arg 1))
@@ -670,7 +671,7 @@ With prefix ARG, cycle backwards."
     (message "Not on a heading")))
 
 (defun porg-shiftmetaleft (&optional arg)
-  "Cycle todo state backward or call `backward-word' if not on a heading."
+  "Cycle todo state backward or `backward-word' if not on a heading ARG times."
   (interactive "p")
   (unless arg (setq arg 1))
   (if (porg--on-heading-p)
@@ -678,7 +679,7 @@ With prefix ARG, cycle backwards."
     (backward-word arg)))
 
 (defun porg-shiftmetaright (&optional arg)
-  "Cycle todo state forward or call `forward-word' if not on a heading."
+  "Cycle todo state forward or `forward-word' if not on a heading ARG times."
   (interactive "p")
   (unless arg (setq arg 1))
   (if (porg--on-heading-p)
@@ -689,9 +690,9 @@ With prefix ARG, cycle backwards."
 ;;;; Navigation
 
 (defun porg-next-visible-heading (&optional arg)
-  "Move to the next heading line.
+  "Move to the next heading line ARG times.
 If moving to a level 1 heading, check if the last non-blank line before
-the next level 1 heading is visible. If not, recenter."
+the next level 1 heading is visible.  If not, recenter."
   (interactive "p")
   (unless arg (setq arg 1))
   (let ((count 0)
@@ -737,9 +738,9 @@ the next level 1 heading is visible. If not, recenter."
             (recenter-top-bottom 0)))))))
 
 (defun porg-previous-visible-heading (&optional arg)
-  "Move to the previous heading line.
+  "Move to the previous heading line ARG times.
 If moving to a level 1 heading, check if the last non-blank line before
-the next level 1 heading is visible. If not, recenter."
+the next level 1 heading is visible.  If not, recenter."
   (interactive "p")
   (unless arg (setq arg 1))
   (let ((count 0)
@@ -797,8 +798,8 @@ Returns a list of (position level text) tuples."
         (while (re-search-forward regexp nil t)
           (let* ((pos (line-beginning-position))
                  (level (porg-current-level))
-                 (text (string-trim 
-                        (buffer-substring-no-properties 
+                 (text (string-trim
+                        (buffer-substring-no-properties
                          (line-beginning-position)
                          (line-end-position)))))
             (when level
@@ -825,7 +826,7 @@ HEADING is a (position level text) tuple."
                       'face outline-face)
           pos)))
 
-(defun consult-porg ()
+(defun porg-consult ()
   "Jump to a porg heading using consult."
   (interactive)
   (unless porg-mode
@@ -879,7 +880,7 @@ HEADING is a (position level text) tuple."
 ;;;; Outline
 
 (defun porg--setup-outline ()
-  "Configure outline-minor-mode for porg headings."
+  "Configure `outline-minor-mode' for porg headings."
   (let ((comment-char (porg--get-comment-char)))
     (when comment-char
       ;; Set outline regexp to match our headings
@@ -1024,7 +1025,7 @@ If not on a heading, perform normal tab indentation."
             (define-key map (kbd "<backtab>")  'porg-cycle-global)
             (define-key map (kbd "C-c C-n")    'porg-next-visible-heading)
             (define-key map (kbd "C-c C-p")    'porg-previous-visible-heading)
-            (define-key map (kbd "C-c C-j")    'consult-porg)
+            (define-key map (kbd "C-c C-j")    'porg-consult)
             (define-key map (kbd "C-c e")      'porg-eval-block)
             (define-key map (kbd "C-c M-w")    'porg-copy-block)
             (define-key map (kbd "C-c w")      'porg-kill-block)
