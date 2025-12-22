@@ -745,30 +745,6 @@ If KEYWORD is nil or empty string, remove any existing keyword."
           ;; Refontify the line
           (font-lock-flush (line-beginning-position) (1+ (line-end-position))))))))
 
-;; (defun porg--set-todo-keyword (keyword)
-;;   "Set the todo KEYWORD for the current heading.
-;; If KEYWORD is nil or empty string, remove any existing keyword."
-;;   (when (porg--on-heading-p)
-;;     (save-excursion
-;;       (beginning-of-line)
-;;       (skip-chars-forward " \t")
-;;       (let ((comment-char (porg--get-comment-char))
-;;             (comment-count (porg--comment-count)))
-;;         (when (and comment-char comment-count)
-;;           (forward-char comment-count)
-;;           (skip-chars-forward " \t")
-;;           ;; Remove existing keyword if present
-;;           (let ((current-keyword (porg--get-todo-keyword)))
-;;             (when current-keyword
-;;               (delete-char (length current-keyword))
-;;               (when (looking-at " ")
-;;                 (delete-char 1))))
-;;           ;; Insert new keyword if provided
-;;           (when (and keyword (not (string-empty-p keyword)))
-;;             (insert keyword " "))
-;;           ;; Refontify the line
-;;           (font-lock-flush (line-beginning-position) (1+ (line-end-position))))))))
-
 (defun porg-todo (&optional arg)
   "Cycle the todo state of the current heading.
 Cycles through: none -> TODO -> DONE -> none -> ...
