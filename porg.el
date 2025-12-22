@@ -1,8 +1,8 @@
 ;;; porg.el --- Bring org-mode features to any prog mode  -*- lexical-binding: t; -*-
 
 ;; Author: Laluxx
-;; Version: 0.0.5
-;; Package-Requires: ((emacs "25.1"))
+;; Version: 0.0.8
+;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: folding, convenience, org-mode
 ;; URL: https://github.com/laluxx/porg
 
@@ -119,6 +119,17 @@ Inherits from org-block to match your theme's block styling."
 (defface porg-done
   '((t :inherit org-done))
   "Face for DONE keywords in porg headings."
+  :group 'porg)
+
+
+(defface porg-special-keyword
+  '((t :inherit org-special-keyword))
+  "Face used for special keywords."
+  :group 'porg)
+
+(defface porg-date
+  '((t :inherit org-date))
+  "Face for date/time stamps."
   :group 'porg)
 
 (defcustom porg-blocks-padding 1
@@ -277,13 +288,34 @@ Returns nil if not on a heading."
 (defvar-local porg--keywords nil
   "Font-lock keywords for the current buffer.")
 
+
 (defun porg--setup-keywords ()
   "Setup font-lock keywords based on current buffer's comment syntax."
   (let ((regexp (porg--make-heading-regexp))
         (comment-char (porg--get-comment-char)))
     (when (and regexp comment-char)
       (setq porg--keywords
-            `(;; Main heading fontification
+            `(;; CLOSED timestamp line
+              (,(format "^[ \t]*%s\\{2\\}CLOSED:.*$"
+                        (regexp-quote (char-to-string comment-char)))
+               (0 (let* ((bol (line-beginning-position))
+                         (eol (line-end-position))
+                         (indent-end (save-excursion
+                                      (beginning-of-line)
+                                      (skip-chars-forward " \t")
+                                      (point))))
+                    ;; Hide the two comment characters
+                    (put-text-property indent-end (+ indent-end 2) 'invisible t)
+                    ;; Find and fontify CLOSED:
+                    (save-excursion
+                      (goto-char (+ indent-end 2))
+                      (when (looking-at "CLOSED:")
+                        (put-text-property (point) (match-end 0) 'face 'porg-special-keyword))
+                      ;; Find and fontify the timestamp
+                      (when (re-search-forward "\\[\\([^]]+\\)\\]" eol t)
+                        (put-text-property (match-beginning 0) (match-end 0) 'face 'porg-date)))
+                    nil)))
+              ;; Main heading fontification
               (,regexp
                (0 (let* ((comment-count (porg--comment-count))
                          (level (porg--logical-level comment-count)))
@@ -407,6 +439,7 @@ Returns the position of the last non-empty line, leaving padding."
 (defun porg--find-block-regions ()
   "Find all regions between headings that need backgrounds."
   (let ((headings (porg--find-heading-positions))
+        (comment-char (porg--get-comment-char))
         blocks)
     (when headings
       (let ((prev-heading (car headings)))
@@ -414,6 +447,11 @@ Returns the position of the last non-empty line, leaving padding."
           (let ((block-start (save-excursion
                                (goto-char prev-heading)
                                (forward-line 1)
+                               ;; Skip CLOSED line if it exists
+                               (when (and (not (eobp))
+                                          (looking-at (format "^[ \t]*%s\\{2\\}CLOSED:"
+                                                              (regexp-quote (char-to-string comment-char)))))
+                                 (forward-line 1))
                                (line-beginning-position)))
                 (block-end (save-excursion
                              (goto-char heading)
@@ -427,6 +465,11 @@ Returns the position of the last non-empty line, leaving padding."
         (let ((block-start (save-excursion
                              (goto-char prev-heading)
                              (forward-line 1)
+                             ;; Skip CLOSED line if it exists
+                             (when (and (not (eobp))
+                                        (looking-at (format "^[ \t]*%s\\{2\\}CLOSED:"
+                                                            (regexp-quote (char-to-string comment-char)))))
+                               (forward-line 1))
                              (line-beginning-position)))
               (block-end (point-max)))
           (when (< block-start block-end)
@@ -635,6 +678,38 @@ Returns nil if not on a heading or no todo keyword present."
                 (when (member word porg-todo-keywords)
                   word)))))))))
 
+(defun porg--get-closed-line ()
+  "Get the CLOSED timestamp line after current heading, if it exists.
+Returns the line position or nil."
+  (when (porg--on-heading-p)
+    (save-excursion
+      (forward-line 1)
+      (when (and (not (eobp))
+                 (looking-at (format "^[ \t]*%s\\{2\\}CLOSED:"
+                                     (regexp-quote (char-to-string (porg--get-comment-char))))))
+        (line-beginning-position)))))
+
+(defun porg--remove-closed-line ()
+  "Remove the CLOSED timestamp line after current heading, if it exists."
+  (when-let* ((closed-pos (porg--get-closed-line)))
+    (save-excursion
+      (goto-char closed-pos)
+      (delete-region (line-beginning-position) (1+ (line-end-position))))))
+
+(defun porg--insert-closed-timestamp ()
+  "Insert a CLOSED timestamp line after the current heading."
+  (when (porg--on-heading-p)
+    (let ((comment-char (porg--get-comment-char))
+          (timestamp (format-time-string "[%Y-%m-%d %a %H:%M]")))
+      (save-excursion
+        ;; Remove existing CLOSED line if present
+        (porg--remove-closed-line)
+        ;; Insert new CLOSED line with 2 leading spaces
+        (end-of-line)
+        (insert "\n  " (make-string 2 comment-char) "CLOSED: " timestamp)
+        ;; Fontify the new line
+        (font-lock-flush (line-beginning-position) (1+ (line-end-position)))))))
+
 (defun porg--set-todo-keyword (keyword)
   "Set the todo KEYWORD for the current heading.
 If KEYWORD is nil or empty string, remove any existing keyword."
@@ -643,7 +718,8 @@ If KEYWORD is nil or empty string, remove any existing keyword."
       (beginning-of-line)
       (skip-chars-forward " \t")
       (let ((comment-char (porg--get-comment-char))
-            (comment-count (porg--comment-count)))
+            (comment-count (porg--comment-count))
+            (previous-keyword (porg--get-todo-keyword)))
         (when (and comment-char comment-count)
           (forward-char comment-count)
           (skip-chars-forward " \t")
@@ -656,8 +732,42 @@ If KEYWORD is nil or empty string, remove any existing keyword."
           ;; Insert new keyword if provided
           (when (and keyword (not (string-empty-p keyword)))
             (insert keyword " "))
+          
+          ;; Handle CLOSED timestamp
+          (cond
+           ;; Adding DONE keyword - insert CLOSED timestamp
+           ((string= keyword "DONE")
+            (porg--insert-closed-timestamp))
+           ;; Removing DONE or changing to something else - remove CLOSED timestamp
+           ((string= previous-keyword "DONE")
+            (porg--remove-closed-line)))
+          
           ;; Refontify the line
           (font-lock-flush (line-beginning-position) (1+ (line-end-position))))))))
+
+;; (defun porg--set-todo-keyword (keyword)
+;;   "Set the todo KEYWORD for the current heading.
+;; If KEYWORD is nil or empty string, remove any existing keyword."
+;;   (when (porg--on-heading-p)
+;;     (save-excursion
+;;       (beginning-of-line)
+;;       (skip-chars-forward " \t")
+;;       (let ((comment-char (porg--get-comment-char))
+;;             (comment-count (porg--comment-count)))
+;;         (when (and comment-char comment-count)
+;;           (forward-char comment-count)
+;;           (skip-chars-forward " \t")
+;;           ;; Remove existing keyword if present
+;;           (let ((current-keyword (porg--get-todo-keyword)))
+;;             (when current-keyword
+;;               (delete-char (length current-keyword))
+;;               (when (looking-at " ")
+;;                 (delete-char 1))))
+;;           ;; Insert new keyword if provided
+;;           (when (and keyword (not (string-empty-p keyword)))
+;;             (insert keyword " "))
+;;           ;; Refontify the line
+;;           (font-lock-flush (line-beginning-position) (1+ (line-end-position))))))))
 
 (defun porg-todo (&optional arg)
   "Cycle the todo state of the current heading.
@@ -838,7 +948,7 @@ HEADING is a (position level text) tuple."
   "Jump to a porg heading using consult."
   (interactive)
   (unless (require 'consult nil t)
-    (user-error "This feature requires the 'consult' package. Install it to use porg-consult"))
+    (user-error "This feature requires the 'consult' package.  Install it to use porg-consult"))
   (let* ((headings (porg--get-headings))
          (candidates (mapcar #'porg--format-heading headings)))
     (if candidates
@@ -1029,6 +1139,7 @@ If not on a heading, perform normal tab indentation."
             (define-key map (kbd "M-f")        'porg-metaright)
             (define-key map (kbd "M-B")        'porg-shiftmetaleft)
             (define-key map (kbd "M-F")        'porg-shiftmetaright)
+            (define-key map (kbd "C-c C-t")    'porg-todo)
             (define-key map (kbd "<tab>")      'porg-cycle)
             (define-key map (kbd "<backtab>")  'porg-cycle-global)
             (define-key map (kbd "C-c C-n")    'porg-next-visible-heading)
