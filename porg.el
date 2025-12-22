@@ -1,10 +1,27 @@
-;;; porg.el --- Org-like features for any programming language  -*- lexical-binding: t; -*-
+;;; porg.el --- Bring org-mode features to any prog mode  -*- lexical-binding: t; -*-
 
 ;; Author: Laluxx
 ;; Version: 0.0.5
 ;; Package-Requires: ((emacs "25.1"))
-;; Keywords: convenience, faces
-;; Homepage: https://github.com/laluxx/porg
+;; Keywords: folding, convenience, org-mode
+;; URL: https://github.com/laluxx/porg
+
+;; This file is not part of GNU Emacs.
+
+;;
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+;;
 
 ;;; Commentary:
 
@@ -335,7 +352,6 @@ Returns nil if not on a heading."
 (defun porg--after-change (beg _end _len)
   "Refontify the line when changes occur in the bullet area.
 BEG is the start of the changed region."
-  (when porg-mode
     (save-excursion
       (goto-char beg)
       (let ((line-start (line-beginning-position))
@@ -345,19 +361,15 @@ BEG is the start of the changed region."
           (remove-text-properties line-start (1+ line-end)
                                   '(invisible nil display nil composition nil))
           (font-lock-flush line-start (1+ line-end)))
-        (porg--update-overlays)))))
+        (porg--update-overlays))))
 
 (defun porg--fontify-buffer ()
   "Fontify the current buffer."
   (when font-lock-mode
-    (if (and (fboundp 'font-lock-flush)
-             (fboundp 'font-lock-ensure))
-        (save-restriction
-          (widen)
-          (font-lock-flush)
-          (font-lock-ensure))
-      (with-no-warnings
-        (font-lock-fontify-buffer)))))
+    (save-restriction
+      (widen)
+      (font-lock-flush)
+      (font-lock-ensure))))
 
 ;;;; Block Functions
 
@@ -525,9 +537,9 @@ section and inserting there."
         (when blank? (insert "\n"))
         (insert "\n" comment-str " ")
         (when (porg--org-string-nw-p split-text) (insert split-text)))))
-    (when porg-mode
-      (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
-      (porg--update-overlays))))
+    
+    (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
+    (porg--update-overlays)))
 
 (defun porg-insert-heading-respect-content (&optional invisible-ok)
   "Insert heading with respect for content structure.
@@ -549,9 +561,8 @@ When INVISIBLE-OK is non-nil, don't error on invisible headlines."
                  (comment-char (porg--get-comment-char))
                  (comment-str (make-string num-comments comment-char)))
             (insert comment-str " ")
-            (when porg-mode
-              (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
-              (porg--update-overlays))))
+            (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
+            (porg--update-overlays)))
       (message "Not on a heading"))))
 
 (defun porg-promote (&optional arg)
@@ -567,9 +578,8 @@ When INVISIBLE-OK is non-nil, don't error on invisible headlines."
                 (beginning-of-line)
                 (skip-chars-forward " \t")
                 (delete-char times)
-                (when porg-mode
-                  (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
-                  (porg--update-overlays))))
+                (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
+                (porg--update-overlays)))
           (message "Cannot promote further")))
     (message "Not on a heading")))
 
@@ -583,9 +593,8 @@ When INVISIBLE-OK is non-nil, don't error on invisible headlines."
           (beginning-of-line)
           (skip-chars-forward " \t")
           (insert (make-string arg comment-char))
-          (when porg-mode
-            (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
-            (porg--update-overlays))))
+          (font-lock-flush (line-beginning-position) (1+ (line-end-position)))
+          (porg--update-overlays)))
     (message "Not on a heading")))
 
 (defun porg-metaleft (&optional arg)
@@ -648,8 +657,7 @@ If KEYWORD is nil or empty string, remove any existing keyword."
           (when (and keyword (not (string-empty-p keyword)))
             (insert keyword " "))
           ;; Refontify the line
-          (when porg-mode
-            (font-lock-flush (line-beginning-position) (1+ (line-end-position)))))))))
+          (font-lock-flush (line-beginning-position) (1+ (line-end-position))))))))
 
 (defun porg-todo (&optional arg)
   "Cycle the todo state of the current heading.
@@ -829,8 +837,6 @@ HEADING is a (position level text) tuple."
 (defun porg-consult ()
   "Jump to a porg heading using consult."
   (interactive)
-  (unless porg-mode
-    (user-error "Porg-mode is not enabled"))
   (unless (require 'consult nil t)
     (user-error "This feature requires the 'consult' package. Install it to use porg-consult"))
   (let* ((headings (porg--get-headings))
