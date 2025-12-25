@@ -52,12 +52,10 @@
 
 (require 'org)
 
-
 (defgroup porg nil
   "Org-like features for programming modes."
   :group 'faces
   :group 'convenience)
-
 
 ;;;; Bullets Configuration
 
@@ -121,7 +119,6 @@ Inherits from org-block to match your theme's block styling."
   "Face for DONE keywords in porg headings."
   :group 'porg)
 
-
 (defface porg-special-keyword
   '((t :inherit org-special-keyword))
   "Face used for special keywords."
@@ -130,6 +127,11 @@ Inherits from org-block to match your theme's block styling."
 (defface porg-date
   '((t :inherit org-date))
   "Face for date/time stamps."
+  :group 'porg)
+
+(defface porg-link
+  '((t :inherit org-link))
+  "Face for links."
   :group 'porg)
 
 (defcustom porg-blocks-padding 1
@@ -162,6 +164,15 @@ File name matching is case-sensitive and matches the base name only."
 ;;;; Internal Variables
 
 (defvar porg-bullet-map (make-sparse-keymap))
+
+(defvar porg-link-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mouse-1] 'porg-open-link-at-point)
+    (define-key map [mouse-2] 'porg-open-link-at-point)
+    (define-key map (kbd "RET") 'porg-open-link-at-point)
+    (define-key map (kbd "C-c C-o") 'porg-open-link-at-point)
+    map)
+  "Keymap for porg links.")
 
 (defvar-local porg--overlays nil
   "List of overlays used for block backgrounds.")
@@ -285,9 +296,61 @@ Returns nil if not on a heading."
               (regexp-quote (char-to-string comment-char))
               porg-base-level))))
 
+(defun porg--in-comment-p ()
+  "Return non-nil if point is inside a comment."
+  (nth 4 (syntax-ppss)))
+
+(defun porg-open-link-at-point ()
+  "Open the link at point."
+  (interactive)
+  (let ((url (get-text-property (point) 'porg-url)))
+    (if url
+        (browse-url url)
+      (message "No link at point"))))
+
+(defun porg--fontify-links (limit)
+  "Fontify links in comments up to LIMIT."
+  (catch 'found
+    (while (< (point) limit)
+      (when (porg--in-comment-p)
+        ;; Try org-style links first
+        (when (re-search-forward "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" limit t)
+          (let ((url (match-string 1))
+                (start (match-beginning 0))
+                (end (match-end 0)))
+            (when (porg--in-comment-p)
+              ;; Hide the brackets and URL, show only description
+              (put-text-property start (match-beginning 2) 'invisible t)
+              (put-text-property (match-end 2) end 'invisible t)
+              ;; Make description look like a link
+              (put-text-property (match-beginning 2) (match-end 2) 'face 'porg-link)
+              (put-text-property (match-beginning 2) (match-end 2) 'mouse-face 'highlight)
+              (put-text-property (match-beginning 2) (match-end 2) 'pointer 'hand)
+              (put-text-property (match-beginning 2) (match-end 2) 'keymap porg-link-map)
+              (put-text-property (match-beginning 2) (match-end 2) 'porg-url url)
+              (put-text-property (match-beginning 2) (match-end 2) 'help-echo url))
+            (throw 'found t)))
+        
+        ;; Try plain URLs
+        (when (re-search-forward "\\(https?://[^ \t\n\r\"'<>\\[]+\\)" limit t)
+          (let ((url (match-string 1))
+                (start (match-beginning 1))
+                (end (match-end 1)))
+            (when (porg--in-comment-p)
+              (put-text-property start end 'face 'porg-link)
+              (put-text-property start end 'mouse-face 'highlight)
+              (put-text-property start end 'pointer 'hand)
+              (put-text-property start end 'keymap porg-link-map)
+              (put-text-property start end 'porg-url url)
+              (put-text-property start end 'help-echo "Click to open URL"))
+            (throw 'found t))))
+      
+      ;; Move forward if we didn't find anything
+      (forward-char 1))
+    nil))
+
 (defvar-local porg--keywords nil
   "Font-lock keywords for the current buffer.")
-
 
 (defun porg--setup-keywords ()
   "Setup font-lock keywords based on current buffer's comment syntax."
@@ -295,7 +358,9 @@ Returns nil if not on a heading."
         (comment-char (porg--get-comment-char)))
     (when (and regexp comment-char)
       (setq porg--keywords
-            `(;; CLOSED timestamp line
+            `(;; Links (must come first to be processed in comments)
+              (porg--fontify-links (0 nil))
+              ;; CLOSED timestamp line
               (,(format "^[ \t]*%s\\{2\\}CLOSED:.*$"
                         (regexp-quote (char-to-string comment-char)))
                (0 (let* ((bol (line-beginning-position))
