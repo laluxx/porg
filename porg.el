@@ -52,6 +52,11 @@
 
 (require 'org)
 
+;; Declare consult functions to avoid byte-compile warnings
+(declare-function consult--read "consult")
+(declare-function consult--lookup-cdr "consult")
+(declare-function consult--jump-state "consult")
+
 (defgroup porg nil
   "Org-like features for programming modes."
   :group 'faces
@@ -105,18 +110,17 @@ The value is an alist, with `heading' as key and a boolean or
 
 (defface porg-block
   '((t :inherit org-block :extend t))
-  "Face used for block backgrounds between comment sections.
-Inherits from org-block to match your theme's block styling."
+  "Face used for text inside various blocks."
   :group 'porg)
 
 (defface porg-todo
   '((t :inherit org-todo))
-  "Face for TODO keywords in porg headings."
+  "Face for TODO keywords."
   :group 'porg)
 
 (defface porg-done
   '((t :inherit org-done))
-  "Face for DONE keywords in porg headings."
+  "Face for todo keywords that indicate DONE items."
   :group 'porg)
 
 (defface porg-special-keyword
