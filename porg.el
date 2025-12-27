@@ -1,7 +1,7 @@
 ;;; porg.el --- Bring org-mode features to any prog mode  -*- lexical-binding: t; -*-
 
 ;; Author: Laluxx
-;; Version: 0.0.8
+;; Version: 0.1.0
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: folding, convenience, org-mode
 ;; URL: https://github.com/laluxx/porg
@@ -247,13 +247,9 @@ Returns the first character of the comment syntax."
   (save-excursion
     (beginning-of-line)
     (skip-chars-forward " \t")
-    (let ((comment-char (porg--get-comment-char))
-          (count 0))
+    (let ((comment-char (porg--get-comment-char)))
       (when comment-char
-        (while (eq (char-after) comment-char)
-          (setq count (1+ count))
-          (forward-char)))
-      (if (> count 0) count nil))))
+        (skip-chars-forward (char-to-string comment-char))))))
 
 ;;;; Utility Functions
 
@@ -343,69 +339,144 @@ Returns nil if not on a heading."
   "Fontify links in comments up to LIMIT."
   (catch 'found
     (while (< (point) limit)
-      (when (porg--in-comment-p)
+      ;; Use re-search-forward directly instead of looping with forward-char
+      (let ((start-pos (point))
+            found)
         ;; Try org-style links first
         (when (re-search-forward "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" limit t)
-          (let ((url (match-string 1))
-                (start (match-beginning 0))
-                (end (match-end 0)))
-            (when (porg--in-comment-p)
-              ;; Hide the brackets and URL, show only description
+          (when (porg--in-comment-p)
+            (let ((url (match-string 1))
+                  (start (match-beginning 0))
+                  (end (match-end 0)))
               (put-text-property start (match-beginning 2) 'invisible t)
               (put-text-property (match-end 2) end 'invisible t)
-              ;; Make description look like a link
               (put-text-property (match-beginning 2) (match-end 2) 'face 'porg-link)
               (put-text-property (match-beginning 2) (match-end 2) 'mouse-face 'highlight)
               (put-text-property (match-beginning 2) (match-end 2) 'pointer 'hand)
               (put-text-property (match-beginning 2) (match-end 2) 'keymap porg-link-map)
               (put-text-property (match-beginning 2) (match-end 2) 'porg-url url)
-              (put-text-property (match-beginning 2) (match-end 2) 'help-echo url))
-            (throw 'found t)))
+              (put-text-property (match-beginning 2) (match-end 2) 'help-echo url)
+              (throw 'found t)))
+          (setq found t))
+        
+        ;; Reset position if we didn't find a match in comment
+        (unless found
+          (goto-char start-pos))
         
         ;; Try plain URLs
         (when (re-search-forward "\\(https?://[^ \t\n\r\"'<>\\[]+\\)" limit t)
-          (let ((url (match-string 1))
-                (start (match-beginning 1))
-                (end (match-end 1)))
-            (when (porg--in-comment-p)
+          (when (porg--in-comment-p)
+            (let ((url (match-string 1))
+                  (start (match-beginning 1))
+                  (end (match-end 1)))
               (put-text-property start end 'face 'porg-link)
               (put-text-property start end 'mouse-face 'highlight)
               (put-text-property start end 'pointer 'hand)
               (put-text-property start end 'keymap porg-link-map)
               (put-text-property start end 'porg-url url)
-              (put-text-property start end 'help-echo "Click to open URL"))
-            (throw 'found t))))
-      
-      ;; Move forward if we didn't find anything
-      (forward-char 1))
+              (put-text-property start end 'help-echo "Click to open URL")
+              (throw 'found t)))
+          (setq found t))
+        
+        ;; If we didn't find anything, we're done
+        (unless found
+          (throw 'found nil))))
     nil))
 
 (defun porg--fontify-symbol-refs (limit)
   "Fontify symbol references like `symbol_name' in comments up to LIMIT."
   (catch 'found
-    (while (< (point) limit)
-      (when (re-search-forward "`\\([^`'\n]+\\)[`']" limit t)
+    (while (re-search-forward "`\\([^`'\n]+\\)[`']" limit t)
+      (when (nth 4 (syntax-ppss (match-beginning 1)))
         (let ((symbol-name (match-string 1))
               (start (match-beginning 0))
               (end (match-end 0))
               (name-start (match-beginning 1))
               (name-end (match-end 1)))
-          (when (nth 4 (syntax-ppss name-start))
-            (put-text-property start name-start 'invisible t)
-            (put-text-property name-end end 'invisible t)
-            (put-text-property name-start name-end 'face 'porg-symbol-ref)
-            (put-text-property name-start name-end 'mouse-face 'highlight)
-            (put-text-property name-start name-end 'pointer 'hand)
-            (put-text-property name-start name-end 'keymap porg-symbol-ref-map)
-            (put-text-property name-start name-end 'porg-symbol-name symbol-name)
-            (put-text-property name-start name-end 'help-echo
-                               (format "RET: Jump to definition of %s" symbol-name))
-            (throw 'found t))))
-      (forward-char 1))
+          (put-text-property start name-start 'invisible t)
+          (put-text-property name-end end 'invisible t)
+          (put-text-property name-start name-end 'face 'porg-symbol-ref)
+          (put-text-property name-start name-end 'mouse-face 'highlight)
+          (put-text-property name-start name-end 'pointer 'hand)
+          (put-text-property name-start name-end 'keymap porg-symbol-ref-map)
+          (put-text-property name-start name-end 'porg-symbol-name symbol-name)
+          (put-text-property name-start name-end 'help-echo
+                             (format "RET: Jump to definition of %s" symbol-name))
+          (throw 'found t))))
     nil))
 
 (defvar-local porg--keywords nil
   "Font-lock keywords for the current buffer.")
+
+(defun porg--fontify-heading ()
+  "Fontify the current heading line.  Called by font-lock."
+  (let* ((comment-count (porg--comment-count))
+         (level (porg--logical-level comment-count)))
+    (when level
+      (let* ((bol (line-beginning-position))
+             (eol (line-end-position))
+             (indent-end (save-excursion
+                          (beginning-of-line)
+                          (skip-chars-forward " \t")
+                          (point)))
+             (bullet-pos (1- level))
+             (char-to-replace (+ indent-end bullet-pos))
+             (text-start (+ indent-end comment-count)))
+        
+        ;; Clear old properties first
+        (remove-text-properties bol eol
+                                '(invisible nil display nil composition nil))
+        
+        ;; Set invisibility and display for leading comment chars (batched)
+        (when (> bullet-pos 0)
+          (add-text-properties indent-end char-to-replace
+                               (list 'invisible t
+                                     'display (make-string bullet-pos ?\s))))
+        
+        ;; Compose bullet
+        (compose-region char-to-replace
+                        (1+ char-to-replace)
+                        (porg-level-char level))
+        
+        ;; Hide remaining comment chars
+        (when (> comment-count (1+ bullet-pos))
+          (put-text-property (1+ char-to-replace)
+                             (+ indent-end comment-count)
+                             'invisible t))
+        
+        ;; Check for TODO/DONE and apply appropriate face
+        (save-excursion
+          (goto-char text-start)
+          (skip-chars-forward " \t")
+          (let ((keyword-start (point)))
+            (skip-chars-forward "A-Z")
+            (let* ((keyword (buffer-substring-no-properties keyword-start (point)))
+                   (level-face (porg-get-face level)))
+              (cond
+               ;; If it's DONE, apply done face to heading text (not bullet)
+               ((string= keyword "DONE")
+                ;; Apply level face to bullet area first with keymap (batched)
+                (add-text-properties bol text-start
+                                     (list 'face level-face
+                                           'keymap porg-bullet-map))
+                ;; Apply done face with proper height to text
+                (put-text-property text-start eol 'face
+                                   (list :inherit 'porg-done
+                                         :height (face-attribute level-face :height))))
+               ;; If it's TODO, apply todo face only to the keyword
+               ((string= keyword "TODO")
+                (add-text-properties bol eol
+                                     (list 'face level-face
+                                           'keymap porg-bullet-map))
+                (put-text-property keyword-start (point) 'face
+                                   (list :inherit 'porg-todo
+                                         :height (face-attribute level-face :height))))
+               ;; Otherwise just use the level face
+               (t
+                (add-text-properties bol eol
+                                     (list 'face level-face
+                                           'keymap porg-bullet-map)))))))
+        nil))))
 
 (defun porg--setup-keywords ()
   "Setup font-lock keywords based on current buffer's comment syntax."
@@ -437,70 +508,7 @@ Returns nil if not on a heading."
                         (put-text-property (match-beginning 0) (match-end 0) 'face 'porg-date)))
                     nil)))
               ;; Main heading fontification
-              (,regexp
-               (0 (let* ((comment-count (porg--comment-count))
-                         (level (porg--logical-level comment-count)))
-                    (when level
-                      (let* ((bol (line-beginning-position))
-                             (eol (line-end-position))
-                             (indent-end (save-excursion
-                                          (beginning-of-line)
-                                          (skip-chars-forward " \t")
-                                          (point)))
-                             (bullet-pos (1- level))
-                             (char-to-replace (+ indent-end bullet-pos))
-                             (text-start (+ indent-end comment-count)))
-                        (remove-text-properties bol eol
-                                                '(invisible nil display nil composition nil))
-                        (when (> bullet-pos 0)
-                          (put-text-property indent-end
-                                             char-to-replace
-                                             'invisible t)
-                          (put-text-property indent-end
-                                             char-to-replace
-                                             'display (make-string bullet-pos ?\s)))
-                        (compose-region char-to-replace
-                                        (1+ char-to-replace)
-                                        (porg-level-char level))
-                        (when (> comment-count (1+ bullet-pos))
-                          (put-text-property (1+ char-to-replace)
-                                             (+ indent-end comment-count)
-                                             'invisible t))
-                        
-                        ;; Check for TODO/DONE and apply appropriate face
-                        (save-excursion
-                          (goto-char text-start)
-                          (skip-chars-forward " \t")
-                          (let ((keyword-start (point)))
-                            (skip-chars-forward "A-Z")
-                            (let* ((keyword (buffer-substring-no-properties keyword-start (point)))
-                                   (level-face (porg-get-face level))
-                                   (base-face-height (or (plist-get (face-attribute level-face :inherit) :height)
-                                                         (face-attribute level-face :height))))
-                              (cond
-                               ;; If it's DONE, apply done face to heading text (not bullet)
-                               ((string= keyword "DONE")
-                                ;; Apply level face to bullet area first
-                                (put-text-property bol text-start 'face level-face)
-                                ;; Apply done face with proper height to text
-                                (put-text-property text-start eol 'face
-                                                   (list :inherit 'porg-done
-                                                         :height (face-attribute level-face :height))))
-                               ;; If it's TODO, apply todo face only to the keyword
-                               ((string= keyword "TODO")
-                                (put-text-property bol eol 'face level-face)
-                                (put-text-property keyword-start (point) 'face
-                                                   (list :inherit 'porg-todo
-                                                         :height (face-attribute level-face :height))))
-                               ;; Otherwise just use the level face
-                               (t
-                                (put-text-property bol eol 'face level-face))))))
-                        
-                        (put-text-property bol
-                                           (1+ text-start)
-                                           'keymap
-                                           porg-bullet-map)))
-                    nil))))))))
+              (,regexp (0 (porg--fontify-heading))))))))
 
 (defun porg--after-change (beg _end _len)
   "Refontify the line when changes occur in the bullet area.
