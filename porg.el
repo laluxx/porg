@@ -62,7 +62,7 @@
   :group 'faces
   :group 'convenience)
 
-;;;; Bullets Configuration
+;;;; Custom
 
 (defcustom porg-bullet-list
   '("◉" "○" "●" "●" "•")
@@ -106,7 +106,34 @@ The value is an alist, with `heading' as key and a boolean or
   :type '(alist :key-type (choice (const heading))
                 :value-type (choice (const auto) (const t) (const nil))))
 
-;;;; Blocks Configuration
+(defcustom porg-blocks-padding 1
+  "Number of blank lines to leave at the end of blocks."
+  :type 'integer
+  :group 'porg
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (dolist (buf (buffer-list))
+           (with-current-buffer buf
+             (when (and (boundp 'porg-mode) porg-mode)
+               (porg--update-overlays))))))
+
+(defcustom porg-blocks-files nil
+  "List of file names where block backgrounds should be shown.
+If nil, blocks are shown in all buffers.
+If set to a list of file names (e.g., \\='(\"init.el\" \"config.el\")),
+blocks will only be shown in buffers visiting files with those names.
+File name matching is case-sensitive and matches the base name only."
+  :type '(choice (const :tag "All files" nil)
+                 (repeat :tag "Specific files" string))
+  :group 'porg
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (dolist (buf (buffer-list))
+           (with-current-buffer buf
+             (when (and (boundp 'porg-mode) porg-mode)
+               (porg--update-overlays))))))
+
+;;;; Faces
 
 (defface porg-block
   '((t :inherit org-block :extend t))
@@ -138,32 +165,10 @@ The value is an alist, with `heading' as key and a boolean or
   "Face for links."
   :group 'porg)
 
-(defcustom porg-blocks-padding 1
-  "Number of blank lines to leave at the end of blocks."
-  :type 'integer
-  :group 'porg
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (dolist (buf (buffer-list))
-           (with-current-buffer buf
-             (when (and (boundp 'porg-mode) porg-mode)
-               (porg--update-overlays))))))
-
-(defcustom porg-blocks-files nil
-  "List of file names where block backgrounds should be shown.
-If nil, blocks are shown in all buffers.
-If set to a list of file names (e.g., \\='(\"init.el\" \"config.el\")),
-blocks will only be shown in buffers visiting files with those names.
-File name matching is case-sensitive and matches the base name only."
-  :type '(choice (const :tag "All files" nil)
-                 (repeat :tag "Specific files" string))
-  :group 'porg
-  :set (lambda (symbol value)
-         (set-default symbol value)
-         (dolist (buf (buffer-list))
-           (with-current-buffer buf
-             (when (and (boundp 'porg-mode) porg-mode)
-               (porg--update-overlays))))))
+(defface porg-symbol-ref
+  '((t :inherit font-lock-constant-face :underline t))
+  "Face for symbol references in comments."
+  :group 'porg)
 
 ;;;; Internal Variables
 
@@ -177,6 +182,15 @@ File name matching is case-sensitive and matches the base name only."
     (define-key map (kbd "C-c C-o") 'porg-open-link-at-point)
     map)
   "Keymap for porg links.")
+
+(defvar porg-symbol-ref-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mouse-1] 'porg-jump-to-symbol)
+    (define-key map [mouse-2] 'porg-jump-to-symbol)
+    (define-key map (kbd "RET") 'porg-jump-to-symbol)
+    (define-key map (kbd "C-c C-o") 'porg-jump-to-symbol)
+    map)
+  "Keymap for porg symbol references.")
 
 (defvar-local porg--overlays nil
   "List of overlays used for block backgrounds.")
@@ -312,6 +326,19 @@ Returns nil if not on a heading."
         (browse-url url)
       (message "No link at point"))))
 
+(defun porg-jump-to-symbol ()
+  "Jump to the definition of the symbol at point using xref."
+  (interactive)
+  (let ((symbol-name (get-text-property (point) 'porg-symbol-name)))
+    (if symbol-name
+        ;; Simply call the interactive command as if the user pressed M-.
+        ;; and provide the symbol name as if it was typed at the prompt
+        (let ((current-prefix-arg nil))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_prompt _collection &rest _args) symbol-name)))
+            (call-interactively #'xref-find-definitions)))
+      (message "No symbol reference at point"))))
+
 (defun porg--fontify-links (limit)
   "Fontify links in comments up to LIMIT."
   (catch 'found
@@ -353,6 +380,30 @@ Returns nil if not on a heading."
       (forward-char 1))
     nil))
 
+(defun porg--fontify-symbol-refs (limit)
+  "Fontify symbol references like `symbol_name' in comments up to LIMIT."
+  (catch 'found
+    (while (< (point) limit)
+      (when (re-search-forward "`\\([^`'\n]+\\)[`']" limit t)
+        (let ((symbol-name (match-string 1))
+              (start (match-beginning 0))
+              (end (match-end 0))
+              (name-start (match-beginning 1))
+              (name-end (match-end 1)))
+          (when (nth 4 (syntax-ppss name-start))
+            (put-text-property start name-start 'invisible t)
+            (put-text-property name-end end 'invisible t)
+            (put-text-property name-start name-end 'face 'porg-symbol-ref)
+            (put-text-property name-start name-end 'mouse-face 'highlight)
+            (put-text-property name-start name-end 'pointer 'hand)
+            (put-text-property name-start name-end 'keymap porg-symbol-ref-map)
+            (put-text-property name-start name-end 'porg-symbol-name symbol-name)
+            (put-text-property name-start name-end 'help-echo
+                               (format "RET: Jump to definition of %s" symbol-name))
+            (throw 'found t))))
+      (forward-char 1))
+    nil))
+
 (defvar-local porg--keywords nil
   "Font-lock keywords for the current buffer.")
 
@@ -363,6 +414,7 @@ Returns nil if not on a heading."
     (when (and regexp comment-char)
       (setq porg--keywords
             `(;; Links (must come first to be processed in comments)
+              (porg--fontify-symbol-refs (0 nil))
               (porg--fontify-links (0 nil))
               ;; CLOSED timestamp line
               (,(format "^[ \t]*%s\\{2\\}CLOSED:.*$"
@@ -849,8 +901,8 @@ With prefix ARG, cycle backwards."
       (porg-todo)
     (forward-word arg)))
 
-;;; Headline
-;;;; Navigation
+;;;; Headline
+;;;;; Navigation
 
 (defun porg-next-visible-heading (&optional arg)
   "Move to the next heading line ARG times.
@@ -1168,6 +1220,28 @@ If not on a heading, perform normal tab indentation."
       (message "OVERVIEW")
       (setq this-command 'porg-cycle-overview)))))
 
+;;;; Electric pair for backtick in comments
+
+(defun porg--setup-electric-pair ()
+  "Setup electric pair for backticks in comments."
+  (when (and (boundp 'electric-pair-mode)
+             ;; Only setup if backtick isn't already paired
+             (not (assq ?` electric-pair-pairs))
+             (not (assq ?` electric-pair-text-pairs)))
+    ;; Add backtick-quote pair
+    (setq-local electric-pair-pairs
+                (append electric-pair-pairs '((?` . ?'))))
+    (setq-local electric-pair-text-pairs
+                (append electric-pair-text-pairs '((?` . ?'))))
+    ;; Only pair backticks when in comments
+    (setq-local electric-pair-inhibit-predicate
+                (lambda (c)
+                  (if (eq c ?`)
+                      ;; Inhibit (return t) if NOT in a comment
+                      (not (nth 4 (syntax-ppss)))
+                    ;; For other characters, use the default predicate
+                    (funcall (default-value 'electric-pair-inhibit-predicate) c))))))
+
 ;;;; Mode Definition
 
 ;;;###autoload
@@ -1190,9 +1264,6 @@ If not on a heading, perform normal tab indentation."
             (define-key map (kbd "C-c C-n")    'porg-next-visible-heading)
             (define-key map (kbd "C-c C-p")    'porg-previous-visible-heading)
             (define-key map (kbd "C-c C-j")    'porg-consult)
-            (define-key map (kbd "C-c e")      'porg-eval-block)
-            (define-key map (kbd "C-c M-w")    'porg-copy-block)
-            (define-key map (kbd "C-c w")      'porg-kill-block)
             map)
   (if porg-mode
       (progn
@@ -1205,7 +1276,8 @@ If not on a heading, perform normal tab indentation."
             (add-hook 'after-change-functions #'porg--after-change nil t)
             (porg--fontify-buffer)
             (porg--update-overlays)
-            (porg--setup-outline))))
+            (porg--setup-outline)
+            (porg--setup-electric-pair))))
     (save-excursion
       (goto-char (point-min))
       (when porg--keywords
