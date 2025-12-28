@@ -48,14 +48,20 @@
 ;; The number of comment characters determines heading level.
 ;; Default base level is 3 (configurable via `porg-base-level').
 
+;;; TODO:
+
+;; it makes indenting wrong
+
 ;;; Code:
 
 (require 'org)
 
-;; Declare consult functions to avoid byte-compile warnings
+;; Declare functions and variables to avoid byte-compile warnings
 (declare-function consult--read "consult")
 (declare-function consult--lookup-cdr "consult")
 (declare-function consult--jump-state "consult")
+(defvar electric-pair-pairs)
+(defvar electric-pair-text-pairs)
 
 (defgroup porg nil
   "Org-like features for programming modes."
@@ -894,16 +900,18 @@ With prefix ARG, cycle backwards."
     (message "Not on a heading")))
 
 (defun porg-shiftmetaleft (&optional arg)
-  "Cycle todo state backward or `backward-word' if not on a heading ARG times."
-  (interactive "p")
+  "Cycle todo state backward or `backward-word' if not on a heading ARG times.
+With shift held, select while moving backward."
+  (interactive "^p")
   (unless arg (setq arg 1))
   (if (porg--on-heading-p)
       (porg-todo t)
     (backward-word arg)))
 
 (defun porg-shiftmetaright (&optional arg)
-  "Cycle todo state forward or `forward-word' if not on a heading ARG times."
-  (interactive "p")
+  "Cycle todo state forward or `forward-word' if not on a heading ARG times.
+With shift held, select while moving forward."
+  (interactive "^p")
   (unless arg (setq arg 1))
   (if (porg--on-heading-p)
       (porg-todo)
