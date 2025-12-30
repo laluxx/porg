@@ -1240,7 +1240,9 @@ If not on a heading, perform normal tab indentation."
 
 (defun porg--setup-electric-pair ()
   "Setup electric pair for backticks in comments."
-  (when (and (boundp 'electric-pair-mode)
+  (when (and (bound-and-true-p electric-pair-mode)
+             (boundp 'electric-pair-pairs)
+             (boundp 'electric-pair-text-pairs)
              ;; Only setup if backtick isn't already paired
              (not (assq ?` electric-pair-pairs))
              (not (assq ?` electric-pair-text-pairs)))
